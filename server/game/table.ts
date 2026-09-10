@@ -27,6 +27,8 @@ export interface TablePlayer {
   rebuyLocked: boolean;
   seatCode: string;
   prevSessionId: string | null;
+  /** AI 玩家：由 addAiPlayer 加入，无真实 socket */
+  isAi: boolean;
 }
 
 export type Phase = "idle" | "betting" | "showdown";
@@ -131,6 +133,48 @@ export class PokerTable {
       rebuyLocked: false,
       seatCode: this.allocSeatCode(),
       prevSessionId: null,
+      isAi: false,
+    };
+    this.players.push(player);
+    const sitOut =
+      this.phase === "betting" || this.phase === "showdown"
+        ? "（本局旁观，下一手参战）"
+        : "";
+    this.pushLog(`${player.nickname} 入座${sitOut}`);
+    return player;
+  }
+
+  /** 加入 AI 玩家：生成 ai:// 会话与座位，筹码为 buyIn，本局旁观下一手参战 */
+  addAiPlayer(nickname: string): TablePlayer {
+    if (this.players.length >= this.maxSeats) {
+      throw new Error("房间已满（最多 8 人）");
+    }
+    const id = `ai://${Math.random().toString(36).slice(2, 10)}`;
+    const used = new Set(this.players.map((x) => x.seat));
+    let seat = 0;
+    while (used.has(seat)) {
+      seat += 1;
+    }
+    const player: TablePlayer = {
+      id,
+      sessionId: `ai://${id}`,
+      nickname,
+      seat,
+      chips: this.buyIn,
+      holeCards: null,
+      folded: false,
+      allIn: false,
+      betThisStreet: 0,
+      contrib: 0,
+      hasActed: false,
+      inHand: false,
+      connected: true,
+      pendingKick: false,
+      buyIns: 1,
+      rebuyLocked: false,
+      seatCode: this.allocSeatCode(),
+      prevSessionId: null,
+      isAi: true,
     };
     this.players.push(player);
     const sitOut =

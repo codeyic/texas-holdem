@@ -275,4 +275,46 @@ describe("牌局引擎", () => {
     expect(t.pickJoinPlayer("phone", b.seatCode)?.id).toBe(b.id);
     expect(t.players).toHaveLength(2);
   });
+
+  describe("AI 玩家", () => {
+    it("addAiPlayer 添加 AI 座位，isAi 标记正确", () => {
+      const t = new PokerTable({
+        hostId: "a",
+        smallBlind: 10,
+        bigBlind: 20,
+        buyIn: 1000,
+      });
+      seat(t, "a", "甲");
+      const ai = t.addAiPlayer("AI-紧凶");
+      expect(ai.isAi).toBe(true);
+      expect(ai.sessionId.startsWith("ai://")).toBe(true);
+      expect(ai.connected).toBe(true);
+      expect(ai.chips).toBe(1000);
+    });
+
+    it("AI 可正常参战并完成一手", () => {
+      const t = new PokerTable({
+        hostId: "a",
+        smallBlind: 10,
+        bigBlind: 20,
+        buyIn: 1000,
+      });
+      seat(t, "a", "甲");
+      t.addAiPlayer("AI-1");
+      t.startHand();
+      expect(t.phase).toBe("betting");
+      // 打完整手不抛异常
+      let guard = 0;
+      while (t.phase === "betting" && t.actorId && guard < 50) {
+        const legal = t.legalActions(t.actorId)!;
+        if (legal.canCheck) {
+          t.applyAction(t.actorId, "check", undefined);
+        } else {
+          t.applyAction(t.actorId, "call", undefined);
+        }
+        guard += 1;
+      }
+      expect(t.phase).toBe("showdown");
+    });
+  });
 });
