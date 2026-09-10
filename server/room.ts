@@ -1,13 +1,25 @@
 /** 房间：会话重连、倒计时、把牌桌状态推给每个玩家 */
 
 import type { WebSocket } from "ws";
-import type { CardDto, LegalActionsDto, NoticeKind, PublicState } from "../shared/protocol";
+import type {
+  CardDto,
+  ClientAction,
+  DecisionPoint,
+  HandRecord,
+  LegalActionsDto,
+  NoticeKind,
+  PublicState,
+} from "../shared/protocol";
 import type { Card } from "./game/cards";
 import { PokerTable } from "./game/table";
 import { isQuickChatLine } from "../shared/quickChat";
+import { chooseAiAction, type AiProfile } from "./engine/ai";
+import { winEquity } from "./engine/equity";
+import { actionEv, classifyLeaks, recommendAction } from "./engine/review";
 
 const ACTION_MS = 20_000;
 const SHOWDOWN_MS = 6_000;
+const AI_DELAY_MS = 600;
 /** 短暂断线（刷新/重连）不立刻弹「离线」，避免与「重连」叠刷 */
 const OFFLINE_NOTICE_MS = 2_000;
 const CHAT_COOLDOWN_MS = 1_500;
@@ -24,6 +36,12 @@ export class Room {
   private sockets = new Map<string, WebSocket>();
   private actionTimer: ReturnType<typeof setTimeout> | null = null;
   private showdownTimer: ReturnType<typeof setTimeout> | null = null;
+  private aiTimer: ReturnType<typeof setTimeout> | null = null;
+  private aiProfile: AiProfile = { name: "紧凶", tightness: 0.6, aggression: 0.85, bluffFreq: 0.05 };
+  private handId: string | null = null;
+  private handDecisions = new Map<string, DecisionPoint[]>(); // playerId -> 本手决策
+  private handHeroes = new Map<string, { nickname: string; hole: Card[] }>();
+  private handOutcome: HandRecord["outcome"] | null = null;
   private offlineNoticeTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** 曾成功上线过的玩家（用于区分房主 API 建房后首次进房 vs 断线重连） */
   private everOnline = new Set<string>();
@@ -133,6 +151,23 @@ export class Room {
     if (youPlayerId) {
       legal = this.table.legalActions(youPlayerId);
     }
+    let equity: number | null = null;
+    if (
+      youPlayerId &&
+      you?.holeCards &&
+      this.table.phase === "betting" &&
+      this.table.potTotal() > 0
+    ) {
+      const opponents = this.table.players.filter(
+        (o) => o.inHand && !o.folded && o.id !== youPlayerId,
+      ).length;
+      equity = winEquity({
+        heroCards: you.holeCards,
+        community: this.table.community,
+        opponents: Array.from({ length: Math.max(1, opponents) }, () => "random" as const),
+        iterations: this.table.community.length >= 3 ? 60 : 300,
+      }).win;
+    }
     return {
       roomCode: this.code,
       phase: this.table.phase,
@@ -143,11 +178,11 @@ export class Room {
       community: this.table.community.map(cardDto),
       pot: this.table.potTotal(),
       currentBet: this.table.currentBet,
-      equity: null, // TODO(Task 2): 注入实时胜率
       actorId: this.table.actorId,
       actionDeadline: this.actionDeadline,
       youPlayerId: youPlayerId,
       yourCards: you?.holeCards ? you.holeCards.map(cardDto) : null,
+      equity,
       legal,
       seats: this.table.players.map((p) => {
         const showOwn = p.id === youPlayerId && p.holeCards;
@@ -169,7 +204,7 @@ export class Room {
           isHost: p.id === this.table.hostId,
           isDealer: p.seat === this.table.dealerSeat && this.table.phase !== "idle",
           isActor: p.id === this.table.actorId,
-          isAi: false, // TODO(Task 2): 从 TablePlayer 读取 AI 标识
+          isAi: p.isAi,
           holeCards: hole,
           buyIns: p.buyIns,
           seatCode: p.seatCode,
@@ -240,18 +275,34 @@ export class Room {
     }
   }
 
+  /** 初始化本手复盘上下文（room.startHand 与 showdown 自动续局共用） */
+  private beginHand(): void {
+    this.handId = `hand-${this.code}-${Date.now()}`;
+    this.handDecisions = new Map();
+    this.handHeroes = new Map();
+    this.handOutcome = null;
+    for (const p of this.table.players) {
+      if (!p.isAi && p.inHand && p.holeCards) {
+        this.handHeroes.set(p.id, { nickname: p.nickname, hole: p.holeCards });
+      }
+    }
+  }
+
   startHand(): void {
     this.clearTimers();
     this.table.startHand();
+    this.beginHand();
     this.armActionTimer();
+    this.scheduleAiIfNeeded();
     this.broadcast();
   }
 
-  act(
-    playerId: string,
-    action: "fold" | "check" | "call" | "raise" | "allin",
-    raiseTo?: number,
-  ): void {
+  act(playerId: string, action: ClientAction, raiseTo?: number): void {
+    const p = this.table.players.find((x) => x.id === playerId);
+    const actor = this.table.actorId === playerId && p;
+    if (actor && !p.isAi && p.holeCards) {
+      this.recordDecision(playerId, action, raiseTo);
+    }
     this.table.applyAction(playerId, action, raiseTo);
     this.afterTableChange();
   }
@@ -260,6 +311,7 @@ export class Room {
     this.clearActionTimer();
     if (this.table.phase === "showdown") {
       this.actionDeadline = null;
+      this.finalizeHandRecords(); // 摊牌后立即结算复盘
       this.broadcast();
       this.showdownTimer = setTimeout(() => {
         this.table.finishShowdownToIdle();
@@ -268,7 +320,9 @@ export class Room {
         );
         if (withChips.length >= 2) {
           this.table.startHand();
+          this.beginHand(); // 续局也要初始化复盘上下文
           this.armActionTimer();
+          this.scheduleAiIfNeeded();
         }
         this.broadcast();
       }, SHOWDOWN_MS);
@@ -276,6 +330,7 @@ export class Room {
     }
     if (this.table.phase === "betting") {
       this.armActionTimer();
+      this.scheduleAiIfNeeded();
     }
     this.broadcast();
   }
@@ -300,6 +355,186 @@ export class Room {
       const msg = err instanceof Error ? err.message : "超时行动失败";
       this.sendError(id, msg);
     }
+  }
+
+  /** 采集真人玩家一次决策，生成 DecisionPoint 存入本手复盘 */
+  private recordDecision(
+    playerId: string,
+    actualAction: ClientAction,
+    raiseTo?: number,
+  ): void {
+    const p = this.table.players.find((x) => x.id === playerId);
+    if (!p || !p.holeCards || this.table.phase !== "betting") {
+      return;
+    }
+    const toCall = Math.max(0, this.table.currentBet - p.betThisStreet);
+    const pot = this.table.potTotal();
+    const potOdds = pot + toCall > 0 ? toCall / (pot + toCall) : 0;
+    const opponents = this.table.players.filter(
+      (o) => o.inHand && !o.folded && o.id !== playerId,
+    ).length;
+    const equity = winEquity({
+      heroCards: p.holeCards,
+      community: this.table.community,
+      opponents: Array.from({ length: Math.max(1, opponents) }, () => "random" as const),
+      iterations: this.table.community.length >= 3 ? 60 : 300,
+    }).win;
+    const canCheck = toCall === 0;
+    const legal = this.table.legalActions(playerId);
+    const minRaiseTo = legal?.minRaiseTo ?? this.table.minRaise;
+    const maxRaiseTo = legal?.maxRaiseTo ?? p.betThisStreet + p.chips;
+    const rec = recommendAction({
+      winEquity: equity,
+      pot,
+      toCall,
+      canCheck,
+      minRaiseTo,
+      maxRaiseTo,
+      chips: p.chips,
+    });
+    // evGap = 实际动作 EV - 推荐动作 EV（负 = 犯错）；lostBB 正数 = 犯错损失 BB
+    const actualEv = actionEv(actualAction, equity, pot, toCall);
+    const recommendedEv = actionEv(rec.action, equity, pot, toCall);
+    const evGap = actualEv - recommendedEv;
+    const dp: DecisionPoint = {
+      street: this.table.street ?? "preflop",
+      position: this.positionOf(p),
+      pot,
+      toCall,
+      winEquity: equity,
+      potOdds,
+      actualAction,
+      raiseTo,
+      recommendedAction: rec.action,
+      evGap,
+      lostBB: -evGap / this.table.bigBlind,
+      leakTags: classifyLeaks({
+        actualAction,
+        recommendedAction: rec.action,
+        winEquity: equity,
+        pot,
+        toCall,
+      }),
+    };
+    const list = this.handDecisions.get(playerId) ?? [];
+    list.push(dp);
+    this.handDecisions.set(playerId, list);
+  }
+
+  /** 简化位置判定：按座位相对庄位的顺序 */
+  private positionOf(p: { seat: number }): string {
+    const seated = [...this.table.players].sort((a, b) => a.seat - b.seat);
+    const idx = seated.findIndex((x) => x.seat === p.seat);
+    const n = seated.length;
+    const dealerIdx = seated.findIndex((x) => x.seat === this.table.dealerSeat);
+    const rel = (idx - dealerIdx + n) % n; // 0=庄位
+    if (n === 2) {
+      return rel === 0 ? "BTN" : "BB";
+    }
+    if (rel === 0) {
+      return "BTN";
+    }
+    if (rel === n - 1) {
+      return "SB";
+    }
+    if (rel === n - 2) {
+      return "BB";
+    }
+    if (rel === n - 3) {
+      return "CO";
+    }
+    if (rel === n - 4) {
+      return "MP";
+    }
+    return "UTG";
+  }
+
+  private scheduleAiIfNeeded(): void {
+    if (this.aiTimer) {
+      clearTimeout(this.aiTimer);
+      this.aiTimer = null;
+    }
+    if (this.table.phase !== "betting") {
+      return;
+    }
+    const actorId = this.table.actorId;
+    if (!actorId) {
+      return;
+    }
+    const actor = this.table.players.find((p) => p.id === actorId);
+    if (!actor?.isAi) {
+      return;
+    }
+    this.aiTimer = setTimeout(() => this.aiAct(), AI_DELAY_MS);
+  }
+
+  private aiAct(): void {
+    this.aiTimer = null;
+    const actorId = this.table.actorId;
+    if (!actorId || this.table.phase !== "betting") {
+      return;
+    }
+    const actor = this.table.players.find((p) => p.id === actorId);
+    if (!actor?.isAi || !actor.holeCards) {
+      return;
+    }
+    const legal = this.table.legalActions(actorId);
+    if (!legal) {
+      return;
+    }
+    const toCall = Math.max(0, this.table.currentBet - actor.betThisStreet);
+    const opponents = this.table.players.filter(
+      (o) => o.inHand && !o.folded && o.id !== actorId,
+    ).length;
+    const choice = chooseAiAction({
+      hole: actor.holeCards,
+      community: this.table.community,
+      profile: this.aiProfile,
+      pot: this.table.potTotal(),
+      toCall,
+      minRaiseTo: legal.minRaiseTo,
+      maxRaiseTo: legal.maxRaiseTo,
+      chips: actor.chips,
+      canCheck: legal.canCheck,
+      opponents,
+    });
+    try {
+      this.table.applyAction(actorId, choice.action, choice.raiseTo);
+      this.afterTableChange();
+    } catch (err) {
+      // AI 行动失败走超时兜底
+      this.autoAct();
+    }
+  }
+
+  /** 摊牌后为每个有决策记录的真人玩家生成 HandRecord 并推送 review */
+  private finalizeHandRecords(): void {
+    if (!this.handId) {
+      return;
+    }
+    for (const [playerId, hero] of this.handHeroes) {
+      const decisions = this.handDecisions.get(playerId) ?? [];
+      if (decisions.length === 0) {
+        continue;
+      }
+      const win = this.table.winners.find((w) => w.playerId === playerId);
+      const record: HandRecord = {
+        handId: this.handId,
+        startedAt: Number(this.handId.split("-").pop() ?? 0),
+        smallBlind: this.table.smallBlind,
+        bigBlind: this.table.bigBlind,
+        heroNickname: hero.nickname,
+        heroHole: hero.hole.map((c) => ({ r: c.r, s: c.s })),
+        decisions,
+        outcome: {
+          wonChips: win?.amount ?? 0,
+          place: win ? 1 : 2,
+          finalHand: win?.handName ?? "",
+        },
+      };
+      this.send(playerId, { type: "review", record });
+    }
+    this.handId = null;
   }
 
   dissolve(): void {
@@ -339,6 +574,10 @@ export class Room {
 
   private clearTimers(): void {
     this.clearActionTimer();
+    if (this.aiTimer) {
+      clearTimeout(this.aiTimer);
+      this.aiTimer = null;
+    }
     if (this.showdownTimer) {
       clearTimeout(this.showdownTimer);
       this.showdownTimer = null;
