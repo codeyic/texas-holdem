@@ -72,7 +72,7 @@ export function chooseAiAction(opts: {
     { length: Math.max(1, opts.opponents) },
     () => "random" as const,
   );
-  const iterations = community.length >= 3 ? 100 : 600;
+  const iterations = community.length >= 3 ? 30 : 400;
   const eq = winEquity({ heroCards: hole, community, opponents, iterations, rng });
   const win = eq.win;
   const potOdds = pot + toCall > 0 ? toCall / (pot + toCall) : 0;

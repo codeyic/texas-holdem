@@ -155,6 +155,7 @@ export class Room {
     if (
       youPlayerId &&
       you?.holeCards &&
+      !you.isAi &&
       this.table.phase === "betting" &&
       this.table.potTotal() > 0
     ) {
@@ -165,7 +166,7 @@ export class Room {
         heroCards: you.holeCards,
         community: this.table.community,
         opponents: Array.from({ length: Math.max(1, opponents) }, () => "random" as const),
-        iterations: this.table.community.length >= 3 ? 60 : 300,
+        iterations: this.table.community.length >= 3 ? 20 : 300,
       }).win;
     }
     return {
@@ -377,7 +378,7 @@ export class Room {
       heroCards: p.holeCards,
       community: this.table.community,
       opponents: Array.from({ length: Math.max(1, opponents) }, () => "random" as const),
-      iterations: this.table.community.length >= 3 ? 60 : 300,
+      iterations: this.table.community.length >= 3 ? 20 : 300,
     }).win;
     const canCheck = toCall === 0;
     const legal = this.table.legalActions(playerId);
