@@ -760,9 +760,11 @@ export function App() {
           return;
         }
         if (msg.type === "review") {
-          void saveHand(msg.record);
           setHandRecords((prev) => [msg.record, ...prev]);
           pushToast("本手已生成复盘，可查看", "info");
+          saveHand(msg.record).catch(() => {
+            pushToast("复盘保存失败（本地存储不可用）", "error");
+          });
           return;
         }
         if (msg.type !== "state") {

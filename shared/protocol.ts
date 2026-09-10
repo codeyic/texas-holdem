@@ -121,7 +121,7 @@ export interface HandRecord {
   outcome: { wonChips: number; place: number; finalHand: string };
 }
 
-export type NoticeKind = "join" | "leave" | "offline" | "reconnect" | "kick" | "info";
+export type NoticeKind = "join" | "leave" | "offline" | "reconnect" | "kick" | "info" | "error";
 
 export type ServerMsg =
   | { type: "state"; state: PublicState }
