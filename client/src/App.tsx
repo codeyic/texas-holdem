@@ -1056,6 +1056,7 @@ export function App() {
     seatCodeRef.current = "";
     setJoinSeat("");
     setState(null);
+    setView("table");
     setConnStatus("idle");
     const url = new URL(location.href);
     url.searchParams.delete("room");
