@@ -245,6 +245,17 @@ function handleMessage(ws: WebSocket, raw: string): void {
       room.startHand();
       return;
     }
+    if (msg.type === "add_ai") {
+      if (playerId !== room.table.hostId) {
+        throw new Error("只有房主可以添加 AI");
+      }
+      const count = room.table.players.filter((p) => p.isAi).length;
+      const names = ["AI-紧凶", "AI-松凶", "AI-紧弱"];
+      const p = room.table.addAiPlayer(names[count % names.length]);
+      room.broadcastNotice(`${p.nickname} 入座（AI）`, "join");
+      room.broadcast();
+      return;
+    }
     if (msg.type === "action") {
       room.act(playerId, msg.action, msg.raiseTo);
       return;
