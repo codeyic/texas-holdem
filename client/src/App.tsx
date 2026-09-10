@@ -26,7 +26,9 @@ import type {
   SeatDto,
   ServerMsg,
 } from "@shared/protocol";
-import { saveHand, listHands } from "./review/db";
+import { saveHand, listHands, clearHands } from "./review/db";
+import { ReviewPanel } from "./review/ReviewPanel";
+import { StatsView } from "./review/StatsView";
 import type { HandRecord } from "@shared/protocol";
 
 const SUIT: Record<CardDto["s"], string> = {
@@ -499,6 +501,8 @@ function TableMenu({
   canDissolve,
   onDissolve,
   onLeave,
+  onViewReview,
+  onViewStats,
 }: {
   menuOpen: boolean;
   menuRef: RefObject<HTMLDivElement>;
@@ -523,6 +527,8 @@ function TableMenu({
   canDissolve: boolean;
   onDissolve: () => void;
   onLeave: () => void;
+  onViewReview: () => void;
+  onViewStats: () => void;
 }) {
   return (
     <div className="table-menu" ref={menuRef}>
@@ -581,6 +587,26 @@ function TableMenu({
               添加 AI
             </button>
           ) : null}
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => {
+              onViewReview();
+              onClose();
+            }}
+          >
+            复盘
+          </button>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => {
+              onViewStats();
+              onClose();
+            }}
+          >
+            统计
+          </button>
           {canRebuy ? (
             <button
               type="button"
@@ -635,6 +661,7 @@ export function App() {
   const [sfxOn, setSfxOn] = useState(() => tableAudio.sfxOn);
   const [state, setState] = useState<PublicState | null>(null);
   const [handRecords, setHandRecords] = useState<HandRecord[]>([]);
+  const [view, setView] = useState<"table" | "review" | "stats">("table");
   const [error, setError] = useState("");
   const [raiseTo, setRaiseTo] = useState(0);
   const [now, setNow] = useState(Date.now());
@@ -690,6 +717,15 @@ export function App() {
       ws.send(JSON.stringify(msg));
     }
   }, []);
+
+  const loadHands = useCallback(async () => {
+    const hs = await listHands();
+    setHandRecords(hs);
+  }, []);
+
+  useEffect(() => {
+    void loadHands();
+  }, [loadHands]);
 
   const roomCodeRef = useRef<string>("");
   const nickRef = useRef<string>("");
@@ -1149,6 +1185,24 @@ export function App() {
     );
   }
 
+  if (state && view === "review") {
+    return (
+      <ReviewPanel
+        records={handRecords}
+        onClear={() => {
+          void clearHands();
+          setHandRecords([]);
+        }}
+        onBack={() => setView("table")}
+      />
+    );
+  }
+  if (state && view === "stats") {
+    return (
+      <StatsView records={handRecords} onBack={() => setView("table")} />
+    );
+  }
+
   const you = state.seats.find((s) => s.playerId === state.youPlayerId);
   const ordered = [...state.seats].sort((a, b) => a.seat - b.seat);
   const myIndex = ordered.findIndex((s) => s.playerId === state.youPlayerId);
@@ -1277,6 +1331,8 @@ export function App() {
           onStart={() => send({ type: "start" })}
           isHost={isHost}
           onAddAi={() => send({ type: "add_ai" })}
+          onViewReview={() => setView("review")}
+          onViewStats={() => setView("stats")}
           canRebuy={canRebuy}
           buyIn={state.buyIn}
           onRebuy={() => send({ type: "rebuy" })}

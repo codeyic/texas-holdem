@@ -2149,3 +2149,64 @@ html.force-land #root {
   background: rgba(245, 130, 20, 0.25);
   color: #ffb347;
 }
+
+.review-page {
+  min-height: 100vh;
+  padding: 20px;
+  color: var(--fg, #e8ecf8);
+}
+.review-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.review-head > div {
+  display: flex;
+  gap: 8px;
+}
+.review-list {
+  list-style: none;
+  padding: 0;
+}
+.review-list li button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--glass, rgba(255,255,255,0.06));
+  border: 1px solid var(--glass-border, rgba(255,255,255,0.12));
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+.review-decisions {
+  list-style: none;
+  padding: 0;
+}
+.decision-tag {
+  padding: 12px 16px;
+  background: var(--glass, rgba(255,255,255,0.05));
+  border: 1px solid var(--glass-border, rgba(255,255,255,0.1));
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+.decision-tag.has-leak { border-color: rgba(255, 110, 120, 0.4); }
+.decision-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-weight: 700;
+}
+.decision-meta { font-size: 0.85rem; opacity: 0.8; margin-top: 4px; }
+.leak-tags { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+.leak-tags span {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 110, 120, 0.16);
+  color: #ff8a92;
+  font-size: 0.75rem;
+}
+.stats-summary { margin-bottom: 12px; }
+.stats-block h3 { margin: 12px 0 6px; font-size: 0.95rem; }
+.stats-block li { list-style: none; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
