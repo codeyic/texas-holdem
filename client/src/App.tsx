@@ -26,6 +26,8 @@ import type {
   SeatDto,
   ServerMsg,
 } from "@shared/protocol";
+import { saveHand, listHands } from "./review/db";
+import type { HandRecord } from "@shared/protocol";
 
 const SUIT: Record<CardDto["s"], string> = {
   s: "♠",
@@ -110,6 +112,7 @@ function SeatBlock({
   phase,
   yourCards,
   buyIn,
+  equity,
   isHost,
   menuOpen,
   onToggleMenu,
@@ -123,6 +126,7 @@ function SeatBlock({
   phase: PublicState["phase"];
   yourCards: CardDto[] | null;
   buyIn: number;
+  equity: number | null;
   isHost: boolean;
   menuOpen: boolean;
   onToggleMenu: (id: string) => void;
@@ -205,6 +209,7 @@ function SeatBlock({
               <span className="seat-nick">{seat.nickname}</span>
               {seat.isHost ? <span className="seat-mark">房</span> : null}
               {seat.playerId === youPlayerId ? <span className="seat-mark">我</span> : null}
+              {seat.isAi ? <span className="seat-mark ai">🤖</span> : null}
             </span>
             <span className="seat-stats">
               {sittingOut ? (
@@ -227,6 +232,9 @@ function SeatBlock({
               <span className="chip-count">
                 {seat.playerId === youPlayerId ? `${seat.chips}筹码` : seat.chips}
               </span>
+              {seat.playerId === youPlayerId && equity !== null ? (
+                <span className="equity-pill">{Math.round(equity * 100)}%</span>
+              ) : null}
               <span className="stat-sep" aria-hidden>
                 ·
               </span>
@@ -483,6 +491,8 @@ function TableMenu({
   onInvite,
   canStart,
   onStart,
+  isHost,
+  onAddAi,
   canRebuy,
   buyIn,
   onRebuy,
@@ -505,6 +515,8 @@ function TableMenu({
   onInvite: () => void;
   canStart: boolean;
   onStart: () => void;
+  isHost: boolean;
+  onAddAi: () => void;
   canRebuy: boolean;
   buyIn: number;
   onRebuy: () => void;
@@ -555,6 +567,18 @@ function TableMenu({
               }}
             >
               开始本局
+            </button>
+          ) : null}
+          {isHost ? (
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => {
+                onAddAi();
+                onClose();
+              }}
+            >
+              添加 AI
             </button>
           ) : null}
           {canRebuy ? (
@@ -610,6 +634,7 @@ export function App() {
   const [bgmOn, setBgmOn] = useState(() => tableAudio.bgmOn);
   const [sfxOn, setSfxOn] = useState(() => tableAudio.sfxOn);
   const [state, setState] = useState<PublicState | null>(null);
+  const [handRecords, setHandRecords] = useState<HandRecord[]>([]);
   const [error, setError] = useState("");
   const [raiseTo, setRaiseTo] = useState(0);
   const [now, setNow] = useState(Date.now());
@@ -732,6 +757,12 @@ export function App() {
             ...prev,
             [msg.playerId]: { text: msg.text, until },
           }));
+          return;
+        }
+        if (msg.type === "review") {
+          void saveHand(msg.record);
+          setHandRecords((prev) => [msg.record, ...prev]);
+          pushToast("本手已生成复盘，可查看", "info");
           return;
         }
         if (msg.type !== "state") {
@@ -1159,6 +1190,7 @@ export function App() {
       phase={state.phase}
       yourCards={state.yourCards}
       buyIn={state.buyIn}
+      equity={state.equity}
       isHost={isHost}
       menuOpen={seatMenuId === seat.playerId}
       onToggleMenu={(id) => {
@@ -1241,6 +1273,8 @@ export function App() {
           onInvite={() => setShowQr((v) => !v)}
           canStart={canStart}
           onStart={() => send({ type: "start" })}
+          isHost={isHost}
+          onAddAi={() => send({ type: "add_ai" })}
           canRebuy={canRebuy}
           buyIn={state.buyIn}
           onRebuy={() => send({ type: "rebuy" })}

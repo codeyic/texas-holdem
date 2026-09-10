@@ -2134,3 +2134,18 @@ html.force-land #root {
     flex: 0 0 auto !important;
   }
 }
+
+.equity-pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(79, 248, 210, 0.16);
+  color: var(--accent-2, #4ef8d2);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.seat-mark.ai {
+  background: rgba(245, 130, 20, 0.25);
+  color: #ffb347;
+}
