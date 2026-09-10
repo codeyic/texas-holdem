@@ -4,6 +4,8 @@ export type BlindPreset = "5/10" | "10/20" | "25/50";
 
 export type ClientAction = "fold" | "check" | "call" | "raise" | "allin";
 
+export type Street = "preflop" | "flop" | "turn" | "river";
+
 export type ClientMsg =
   | {
       type: "join";
@@ -14,6 +16,7 @@ export type ClientMsg =
     }
   | { type: "action"; action: ClientAction; raiseTo?: number }
   | { type: "start" }
+  | { type: "add_ai" }
   | { type: "rebuy" }
   | { type: "leave" }
   | { type: "kick"; playerId: string }
@@ -38,6 +41,7 @@ export interface SeatDto {
   isHost: boolean;
   isDealer: boolean;
   isActor: boolean;
+  isAi: boolean;
   /** 摊牌或已弃牌时可能亮出 */
   holeCards: CardDto[] | null;
   /** 拿了几手筹码（入座算 1，输光再拿 +1） */
@@ -60,13 +64,14 @@ export interface LegalActionsDto {
 export interface PublicState {
   roomCode: string;
   phase: "idle" | "betting" | "showdown";
-  street: "preflop" | "flop" | "turn" | "river" | null;
+  street: Street | null;
   smallBlind: number;
   bigBlind: number;
   buyIn: number;
   community: CardDto[];
   pot: number;
   currentBet: number;
+  equity: number | null; // 仅自己，null 表示不可算
   actorId: string | null;
   actionDeadline: number | null;
   youPlayerId: string | null;
@@ -90,10 +95,37 @@ export interface RoomSummary {
   names: string[];
 }
 
+export interface DecisionPoint {
+  street: Street;
+  position: string; // "BTN" | "SB" | "BB" | "UTG" | "MP" | "CO"
+  pot: number;
+  toCall: number;
+  winEquity: number; // 0..1
+  potOdds: number; // 0..1
+  actualAction: ClientAction;
+  raiseTo?: number;
+  recommendedAction: ClientAction;
+  evGap: number; // 实际动作 EV 与推荐动作 EV 之差（正=好）
+  lostBB: number; // -evGap / bigBlind
+  leakTags: string[];
+}
+
+export interface HandRecord {
+  handId: string;
+  startedAt: number;
+  smallBlind: number;
+  bigBlind: number;
+  heroNickname: string;
+  heroHole: CardDto[];
+  decisions: DecisionPoint[];
+  outcome: { wonChips: number; place: number; finalHand: string };
+}
+
 export type NoticeKind = "join" | "leave" | "offline" | "reconnect" | "kick" | "info";
 
 export type ServerMsg =
   | { type: "state"; state: PublicState }
   | { type: "error"; message: string }
   | { type: "notice"; text: string; kind: NoticeKind }
-  | { type: "chat"; playerId: string; nickname: string; text: string };
+  | { type: "chat"; playerId: string; nickname: string; text: string }
+  | { type: "review"; record: HandRecord };

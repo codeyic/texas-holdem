@@ -143,6 +143,7 @@ export class Room {
       community: this.table.community.map(cardDto),
       pot: this.table.potTotal(),
       currentBet: this.table.currentBet,
+      equity: null, // TODO(Task 2): 注入实时胜率
       actorId: this.table.actorId,
       actionDeadline: this.actionDeadline,
       youPlayerId: youPlayerId,
@@ -168,6 +169,7 @@ export class Room {
           isHost: p.id === this.table.hostId,
           isDealer: p.seat === this.table.dealerSeat && this.table.phase !== "idle",
           isActor: p.id === this.table.actorId,
+          isAi: false, // TODO(Task 2): 从 TablePlayer 读取 AI 标识
           holeCards: hole,
           buyIns: p.buyIns,
           seatCode: p.seatCode,
