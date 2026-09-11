@@ -41,6 +41,8 @@ export class Room {
   private handDecisions = new Map<string, DecisionPoint[]>(); // playerId -> 本手决策
   private handHeroes = new Map<string, { nickname: string; hole: Card[] }>();
   private handOutcome: HandRecord["outcome"] | null = null;
+  /** 胜率缓存：同一街内手牌/公共牌/对手数不变则不重复采样 */
+  private equityCache = new Map<string, number>();
   private offlineNoticeTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** 曾成功上线过的玩家（用于区分房主 API 建房后首次进房 vs 断线重连） */
   private everOnline = new Set<string>();
@@ -151,22 +153,8 @@ export class Room {
       legal = this.table.legalActions(youPlayerId);
     }
     let equity: number | null = null;
-    if (
-      youPlayerId &&
-      you?.holeCards &&
-      !you.isAi &&
-      this.table.phase === "betting" &&
-      this.table.potTotal() > 0
-    ) {
-      const opponents = this.table.players.filter(
-        (o) => o.inHand && !o.folded && o.id !== youPlayerId,
-      ).length;
-      equity = winEquity({
-        heroCards: you.holeCards,
-        community: this.table.community,
-        opponents: Array.from({ length: Math.max(1, opponents) }, () => "random" as const),
-        iterations: this.table.community.length >= 3 ? 20 : 300,
-      }).win;
+    if (youPlayerId && this.table.phase === "betting" && this.table.potTotal() > 0) {
+      equity = this.equityFor(youPlayerId);
     }
     return {
       roomCode: this.code,
@@ -281,6 +269,7 @@ export class Room {
     this.handDecisions = new Map();
     this.handHeroes = new Map();
     this.handOutcome = null;
+    this.equityCache.clear();
     for (const p of this.table.players) {
       if (!p.isAi && p.inHand && p.holeCards) {
         this.handHeroes.set(p.id, { nickname: p.nickname, hole: p.holeCards });
@@ -357,6 +346,38 @@ export class Room {
     }
   }
 
+  /** 当前决策状态下的实时胜率；同一街内（手牌/公共牌/对手数不变）复用缓存避免每次广播重复采样 */
+  private equityFor(playerId: string): number | null {
+    const p = this.table.players.find((x) => x.id === playerId);
+    if (!p?.holeCards || p.isAi || this.table.phase !== "betting") {
+      return null;
+    }
+    const opponents = this.table.players.filter(
+      (o) => o.inHand && !o.folded && o.id !== playerId,
+    ).length;
+    const key = [
+      this.table.street ?? "",
+      this.table.community.map((c) => c.r + c.s).join(""),
+      p.holeCards.map((c) => c.r + c.s).join(""),
+      opponents,
+    ].join("|");
+    const cached = this.equityCache.get(key);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const value = winEquity({
+      heroCards: p.holeCards,
+      community: this.table.community,
+      opponents: Array.from(
+        { length: Math.max(1, opponents) },
+        () => "random" as const,
+      ),
+      iterations: this.table.community.length >= 3 ? 20 : 300,
+    }).win;
+    this.equityCache.set(key, value);
+    return value;
+  }
+
   /** 采集真人玩家一次决策，生成 DecisionPoint 存入本手复盘 */
   private recordDecision(
     playerId: string,
@@ -370,15 +391,10 @@ export class Room {
     const toCall = Math.max(0, this.table.currentBet - p.betThisStreet);
     const pot = this.table.potTotal();
     const potOdds = pot + toCall > 0 ? toCall / (pot + toCall) : 0;
-    const opponents = this.table.players.filter(
-      (o) => o.inHand && !o.folded && o.id !== playerId,
-    ).length;
-    const equity = winEquity({
-      heroCards: p.holeCards,
-      community: this.table.community,
-      opponents: Array.from({ length: Math.max(1, opponents) }, () => "random" as const),
-      iterations: this.table.community.length >= 3 ? 20 : 300,
-    }).win;
+    const equity = this.equityFor(playerId);
+    if (equity === null) {
+      return;
+    }
     const canCheck = toCall === 0;
     const legal = this.table.legalActions(playerId);
     const minRaiseTo = legal?.minRaiseTo ?? this.table.minRaise;
