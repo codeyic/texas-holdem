@@ -16,6 +16,17 @@ export const AI_PROFILES: Record<string, AiProfile> = {
   tightPassive: { name: "紧弱", tightness: 0.8, aggression: 0.25, bluffFreq: 0.02 },
 };
 
+/** 按昵称映射 AI 性格（昵称形如 "AI-紧凶"）；未匹配时用紧凶 */
+export function profileByNickname(nickname: string): AiProfile {
+  if (nickname.includes("松凶")) {
+    return AI_PROFILES.looseAggressive;
+  }
+  if (nickname.includes("紧弱")) {
+    return AI_PROFILES.tightPassive;
+  }
+  return AI_PROFILES.tightAggressive;
+}
+
 export type AiAction = "fold" | "check" | "call" | "raise" | "allin";
 
 export interface AiChoice {

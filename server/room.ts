@@ -13,7 +13,7 @@ import type {
 import type { Card } from "./game/cards";
 import { PokerTable } from "./game/table";
 import { isQuickChatLine } from "../shared/quickChat";
-import { chooseAiAction, type AiProfile } from "./engine/ai";
+import { chooseAiAction, profileByNickname } from "./engine/ai";
 import { winEquity } from "./engine/equity";
 import { actionEv, classifyLeaks, recommendAction } from "./engine/review";
 
@@ -37,7 +37,6 @@ export class Room {
   private actionTimer: ReturnType<typeof setTimeout> | null = null;
   private showdownTimer: ReturnType<typeof setTimeout> | null = null;
   private aiTimer: ReturnType<typeof setTimeout> | null = null;
-  private aiProfile: AiProfile = { name: "紧凶", tightness: 0.6, aggression: 0.85, bluffFreq: 0.05 };
   private handId: string | null = null;
   private handDecisions = new Map<string, DecisionPoint[]>(); // playerId -> 本手决策
   private handHeroes = new Map<string, { nickname: string; hole: Card[] }>();
@@ -435,16 +434,16 @@ export class Room {
     if (rel === 0) {
       return "BTN";
     }
-    if (rel === n - 1) {
+    if (rel === 1) {
       return "SB";
     }
-    if (rel === n - 2) {
+    if (rel === 2) {
       return "BB";
     }
-    if (rel === n - 3) {
+    if (rel === n - 1) {
       return "CO";
     }
-    if (rel === n - 4) {
+    if (rel === n - 2) {
       return "MP";
     }
     return "UTG";
@@ -490,7 +489,7 @@ export class Room {
     const choice = chooseAiAction({
       hole: actor.holeCards,
       community: this.table.community,
-      profile: this.aiProfile,
+      profile: profileByNickname(actor.nickname),
       pot: this.table.potTotal(),
       toCall,
       minRaiseTo: legal.minRaiseTo,
