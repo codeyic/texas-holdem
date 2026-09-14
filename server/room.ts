@@ -349,7 +349,13 @@ export class Room {
   /** 当前决策状态下的实时胜率；同一街内（手牌/公共牌/对手数不变）复用缓存避免每次广播重复采样 */
   private equityFor(playerId: string): number | null {
     const p = this.table.players.find((x) => x.id === playerId);
-    if (!p?.holeCards || p.isAi || this.table.phase !== "betting") {
+    if (
+      !p?.holeCards ||
+      p.isAi ||
+      p.folded ||
+      !p.inHand ||
+      this.table.phase !== "betting"
+    ) {
       return null;
     }
     const opponents = this.table.players.filter(
@@ -372,7 +378,7 @@ export class Room {
         { length: Math.max(1, opponents) },
         () => "random" as const,
       ),
-      iterations: this.table.community.length >= 3 ? 20 : 300,
+      iterations: this.table.community.length >= 3 ? 150 : 300,
     }).win;
     this.equityCache.set(key, value);
     return value;
@@ -534,6 +540,7 @@ export class Room {
         continue;
       }
       const win = this.table.winners.find((w) => w.playerId === playerId);
+      const heroPlayer = this.table.players.find((x) => x.id === playerId);
       const record: HandRecord = {
         handId: this.handId,
         startedAt: Number(this.handId.split("-").pop() ?? 0),
@@ -542,6 +549,8 @@ export class Room {
         heroNickname: hero.nickname,
         heroHole: hero.hole.map((c) => ({ r: c.r, s: c.s })),
         decisions,
+        // showdown: hero 是否走到摊牌（中途弃牌则 false）
+        showdown: !heroPlayer?.folded,
         outcome: {
           wonChips: win?.amount ?? 0,
           place: win ? 1 : 2,

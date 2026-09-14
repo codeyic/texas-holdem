@@ -118,6 +118,8 @@ export interface HandRecord {
   heroNickname: string;
   heroHole: CardDto[];
   decisions: DecisionPoint[];
+  // hero 是否走到摊牌（中途弃牌则 false）
+  showdown: boolean;
   // place: 1 = 本手赢到筹码（含平分底池的所有赢家），2 = 未赢
   outcome: { wonChips: number; place: number; finalHand: string };
 }

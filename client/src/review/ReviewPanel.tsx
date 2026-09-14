@@ -18,6 +18,14 @@ const ACTION_NAME: Record<string, string> = {
   allin: "全下",
 };
 
+/** 摊牌状态文案：赢家显示成牌牌型；其余按是否走到摊牌区分 */
+function stageText(r: HandRecord): string {
+  if (r.outcome.place === 1 && r.outcome.finalHand) {
+    return r.outcome.finalHand;
+  }
+  return r.showdown ? "摊牌" : "未摊牌";
+}
+
 export function ReviewPanel({
   records,
   onClear,
@@ -61,7 +69,7 @@ export function ReviewPanel({
         <div className="review-summary">
           <p>
             {selected.heroNickname} · {selected.smallBlind}/{selected.bigBlind} ·{" "}
-            {selected.outcome.finalHand || "未摊牌"}
+            {stageText(selected)}
           </p>
           <p>
             结果：{selected.outcome.wonChips > 0 ? `+${selected.outcome.wonChips}` : selected.outcome.wonChips}
@@ -110,7 +118,7 @@ export function ReviewPanel({
             <button type="button" onClick={() => setSelectedId(r.handId)}>
               <strong>{new Date(r.startedAt).toLocaleString()}</strong>
               <span>
-                {r.decisions.length} 个决策点 · {r.outcome.finalHand || "未摊牌"} ·{" "}
+                {r.decisions.length} 个决策点 · {stageText(r)} ·{" "}
                 {r.outcome.wonChips > 0 ? `+${r.outcome.wonChips}` : r.outcome.wonChips}
               </span>
             </button>
