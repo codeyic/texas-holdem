@@ -14,6 +14,9 @@ export const AI_PROFILES: Record<string, AiProfile> = {
   tightAggressive: { name: "紧凶", tightness: 0.6, aggression: 0.85, bluffFreq: 0.05 },
   looseAggressive: { name: "松凶", tightness: 0.2, aggression: 0.9, bluffFreq: 0.18 },
   tightPassive: { name: "紧弱", tightness: 0.8, aggression: 0.25, bluffFreq: 0.02 },
+  callingStation: { name: "跟注站", tightness: 0.15, aggression: 0.08, bluffFreq: 0.02 },
+  maniac: { name: "疯狂", tightness: 0.1, aggression: 0.95, bluffFreq: 0.6 },
+  rock: { name: "岩石", tightness: 0.92, aggression: 0.7, bluffFreq: 0.01 },
 };
 
 /** 按昵称映射 AI 性格（昵称形如 "AI-紧凶"）；未匹配时用紧凶 */
@@ -23,6 +26,15 @@ export function profileByNickname(nickname: string): AiProfile {
   }
   if (nickname.includes("紧弱")) {
     return AI_PROFILES.tightPassive;
+  }
+  if (nickname.includes("跟注站")) {
+    return AI_PROFILES.callingStation;
+  }
+  if (nickname.includes("疯狂")) {
+    return AI_PROFILES.maniac;
+  }
+  if (nickname.includes("岩石")) {
+    return AI_PROFILES.rock;
   }
   return AI_PROFILES.tightAggressive;
 }
@@ -97,6 +109,10 @@ export function chooseAiAction(opts: {
     }
     // 弱牌诈唬
     if (win < 0.5 && rng() < profile.bluffFreq) {
+      return { action: "raise", raiseTo: raiseSize(win, pot, minRaiseTo, maxRaiseTo, profile) };
+    }
+    // 中等牌按攻击性打折后价值下注（疯狂型中牌也高频开枪）
+    if (win >= 0.5 && rng() < profile.aggression * 0.6) {
       return { action: "raise", raiseTo: raiseSize(win, pot, minRaiseTo, maxRaiseTo, profile) };
     }
     return { action: "check" };

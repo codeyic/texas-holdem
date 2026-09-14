@@ -2,7 +2,7 @@
 
 import cors from "cors";
 import express from "express";
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -111,10 +111,42 @@ app.use(cors());
 app.use(express.json());
 
 const siteDir = path.resolve(__dirname, "../../codeyc-site");
+const UNO_UPSTREAM = process.env.UNO_UPSTREAM ?? "http://127.0.0.1:8081";
+
+function proxyUno(req: express.Request, res: express.Response): void {
+  const target = new URL(req.originalUrl, UNO_UPSTREAM);
+  const headers = { ...req.headers, host: target.host };
+  const upstream = httpRequest(
+    {
+      protocol: target.protocol,
+      hostname: target.hostname,
+      port: target.port,
+      path: target.pathname + target.search,
+      method: req.method,
+      headers,
+    },
+    (up) => {
+      res.writeHead(up.statusCode ?? 502, up.headers as any);
+      up.pipe(res);
+    },
+  );
+  upstream.on("error", () => {
+    if (!res.headersSent) res.status(502).json({ error: "UNO 服务未启动" });
+    else res.end();
+  });
+  req.pipe(upstream);
+}
+
+
 app.get("/", (_req, res) => {
   res.sendFile(path.join(siteDir, "index.html"));
 });
 app.use(express.static(siteDir));
+
+app.use("/uno", (req, res) => {
+  proxyUno(req, res);
+});
+
 
 app.get(`${PUBLIC_BASE}/api/info`, (_req, res) => {
   res.json({ lanUrls: listInviteUrls(PORT), port: PORT });
@@ -157,6 +189,36 @@ if (process.env.NODE_ENV === "production") {
 }
 
 const server = createServer(app);
+server.on("upgrade", (req, socket, head) => {
+  const url = req.url ?? "";
+  if (!(url === "/uno/ws" || url.startsWith("/uno/ws?"))) return;
+  const target = new URL(url, UNO_UPSTREAM);
+  const upstream = httpRequest({
+    protocol: target.protocol,
+    hostname: target.hostname,
+    port: target.port,
+    path: target.pathname + target.search,
+    method: "GET",
+    headers: { ...req.headers, host: target.host },
+  });
+  upstream.on("upgrade", (upRes, upSocket, upHead) => {
+    socket.write(
+      `HTTP/1.1 101 Switching Protocols\r\n` +
+        Object.entries(upRes.headers)
+          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`)
+          .join("\r\n") +
+        `\r\n\r\n`,
+    );
+    if (upHead?.length) socket.write(upHead);
+    upSocket.pipe(socket);
+    socket.pipe(upSocket);
+  });
+  upstream.on("error", () => socket.destroy());
+  upstream.end();
+  // prevent default fallthrough
+  (req as any)._unoProxied = true;
+});
+
 const wss = new WebSocketServer({ server, path: `${PUBLIC_BASE}/ws` });
 
 type SocketData = { playerId?: string; room?: Room };
@@ -250,7 +312,7 @@ function handleMessage(ws: WebSocket, raw: string): void {
         throw new Error("只有房主可以添加 AI");
       }
       const count = room.table.players.filter((p) => p.isAi).length;
-      const names = ["AI-紧凶", "AI-松凶", "AI-紧弱"];
+      const names = ["AI-紧凶", "AI-松凶", "AI-紧弱", "AI-跟注站", "AI-疯狂", "AI-岩石"];
       const p = room.table.addAiPlayer(names[count % names.length]);
       room.broadcastNotice(`${p.nickname} 入座（AI）`, "join");
       room.broadcast();
