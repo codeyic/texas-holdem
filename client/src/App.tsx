@@ -901,11 +901,13 @@ export function App() {
     const onDoc = (ev: MouseEvent) => {
       const target = ev.target as Node;
       const el = menuRef.current;
-      if (menuOpen && el && !el.contains(target)) {
+      const chatEl = chatRef.current;
+      // 菜单与聊天几何上不相交（菜单右上向下展开，聊天左下向上弹出），
+      // 互相豁免：点聊天不收菜单、点菜单不收聊天，避免"开始本局"按钮突然消失
+      if (menuOpen && el && !el.contains(target) && !(chatEl && chatEl.contains(target))) {
         setMenuOpen(false);
       }
-      const chatEl = chatRef.current;
-      if (chatOpen && chatEl && !chatEl.contains(target)) {
+      if (chatOpen && chatEl && !chatEl.contains(target) && !(el && el.contains(target))) {
         setChatOpen(false);
       }
       if (seatMenuId) {
