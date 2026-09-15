@@ -491,8 +491,6 @@ function TableMenu({
   onSfx,
   showQr,
   onInvite,
-  canStart,
-  onStart,
   isHost,
   onAddAi,
   canRebuy,
@@ -517,8 +515,6 @@ function TableMenu({
   onSfx: (v: boolean) => void;
   showQr: boolean;
   onInvite: () => void;
-  canStart: boolean;
-  onStart: () => void;
   isHost: boolean;
   onAddAi: () => void;
   canRebuy: boolean;
@@ -563,18 +559,6 @@ function TableMenu({
           >
             {showQr ? "收起二维码" : "邀请"}
           </button>
-          {canStart ? (
-            <button
-              type="button"
-              className="primary"
-              onClick={() => {
-                onStart();
-                onClose();
-              }}
-            >
-              开始本局
-            </button>
-          ) : null}
           {isHost ? (
             <button
               type="button"
@@ -1330,8 +1314,6 @@ export function App() {
           onSfx={setSfxOn}
           showQr={showQr}
           onInvite={() => setShowQr((v) => !v)}
-          canStart={canStart}
-          onStart={() => send({ type: "start" })}
           isHost={isHost}
           onAddAi={() => send({ type: "add_ai" })}
           onViewReview={() => setView("review")}
@@ -1394,6 +1376,16 @@ export function App() {
           <div className="rail rail-south">{rails.south.map(renderSeat)}</div>
         </div>
       </div>
+
+      {canStart ? (
+        <button
+          type="button"
+          className="primary table-start-btn"
+          onClick={() => send({ type: "start" })}
+        >
+          开始本局
+        </button>
+      ) : null}
 
       {state.winners.length > 0 && state.phase === "showdown" ? (
         <div className="winners">

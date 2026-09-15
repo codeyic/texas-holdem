@@ -378,6 +378,19 @@ summary.ghost {
   overflow: visible;
 }
 
+/* 牌桌下方的大号「开始本局」按钮：仅房主且无人开局时显示，点击后随 phase 消失 */
+.table-start-btn {
+  flex-shrink: 0;
+  display: block;
+  margin: 4px auto 6px;
+  min-height: 46px;
+  min-width: min(280px, 72%);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
 .felt-grid {
   display: grid;
   height: 100%;
